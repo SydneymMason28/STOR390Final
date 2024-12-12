@@ -1,0 +1,83 @@
+---
+title: "final2"
+author: "Sydney Mason"
+date: "2024-12-11"
+output: html_document
+---
+
+
+```{r, echo=FALSE, warning= FALSE, message = FALSE}
+
+library(readxl)
+library(dplyr)
+library(ggplot2)
+nc_data <- read_excel("C:/Users/Owner/Downloads/TABLE_DAILY_CASE&DEATHS_METRICS.xlsx")  #data obtained from NCDHHS and modified by me to have days of week
+
+filtered_dates <- nc_data %>%
+  mutate(
+    date = as.Date(Date, format = "%m/%d/%Y"),  # Convert 'Date' to Date format was writen weirdly originally
+    day_of_week = weekdays(date)  # pulled days of week
+  ) %>%
+  filter(date >= as.Date("2020-12-11") & date <= as.Date("2020-12-25")) %>%  # Filter for the date range for the 11th of december 2020 to 25th
+  arrange(date)
+
+filtered_dates <- filtered_dates %>%
+  mutate(
+    actual_growth_rate = log(
+      (`Molecular (PCR) Positive Cases by Specimen Date` + `Antigen Positive Cases by Specimen Date`) /
+      lag(`Molecular (PCR) Positive Cases by Specimen Date` + `Antigen Positive Cases by Specimen Date`)
+    )  # Actual growth rate: log(I_t / I_{t-1}) based upon model in paper
+  ) %>%
+  na.omit()  # Remove rows with NA values caused by lag
+
+filtered_dates <- filtered_dates %>%
+  mutate(day_of_week = as.factor(day_of_week))  # making sure day of week in right format
+
+model <- lm(
+  actual_growth_rate ~ day_of_week,  # Growth rate as a function of day of the week inn a linear model 
+  data = filtered_dates
+)
+
+filtered_dates <- filtered_dates %>%
+  mutate(
+    predicted_growth_rate = predict(model, newdata = filtered_dates),  # Add model predictions to see how a base model would determine the growth
+    growth_rate_error = actual_growth_rate - predicted_growth_rate,  # Error = actual - predicted
+    percent_error = (growth_rate_error / abs(actual_growth_rate)) * 100  # Percent error
+  )
+
+filtered_dates <- filtered_dates %>%
+  mutate(
+    percent_error = ifelse(
+      is.na(actual_growth_rate) | actual_growth_rate == 0, 
+      NA,  # Assign NA for where we don't have info
+      (growth_rate_error / abs(actual_growth_rate)) * 100
+    )
+  )
+
+
+average_percent_error <- mean(filtered_dates$percent_error, na.rm = TRUE)
+print(paste("Average Percent Error:", round(average_percent_error, 2), "%")) #calculating and printing info on average percent error for summary stats
+
+
+summary(model) # finishing summary stats
+
+
+ggplot(filtered_dates, aes(x = date)) +
+  geom_line(aes(y = actual_growth_rate, color = "Actual")) +
+  geom_line(aes(y = predicted_growth_rate, color = "Predicted")) +
+  labs(title = "Actual vs Predicted Growth Rates",
+       x = "Date", y = "Growth Rate",
+       color = "Legend") +
+  theme_minimal() # graph showing the rates of growth predicted and actual 
+
+ggplot(filtered_dates, aes(x = date, y = percent_error)) +
+  geom_bar(stat = "identity", fill = "red", alpha = 0.7) +
+  labs(title = "Percent Error over Time",
+       x = "Date", y = "Percent Error (%)") +
+  theme_minimal() #percent error model
+
+head(filtered_dates[c("date", "day_of_week", "actual_growth_rate", "predicted_growth_rate", "growth_rate_error", "percent_error")]) # showing final data
+
+
+```
+
